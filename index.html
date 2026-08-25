@@ -56,10 +56,10 @@ const CONFIG = {
   defaultRegularDays: 7,
   defaultExpeditedDays: 3,
   notifyEmail: "hello@acme.com",
-  sheetId: "YOUR_GOOGLE_SHEET_ID_HERE",
+  sheetId: "1c08y-SZs2w6bM91dOxgZ9gOmUGmgarfiUlnvvZFS2uA",
 };
 
-const API_URL = "https://your-worker.workers.dev/"; // ← replace with your Cloudflare Worker URL
+const API_URL = "https://script.google.com/macros/s/AKfycbx_zPR3URUF6ADhHw6qeqmgEl9FKSMBiAq_3DQLbQz7sULeOVZgOR4TgEGpQcpsMX1mzg/exec"; // Apps Script Web App URL (swap for a Cloudflare Worker URL later if you want it hidden)
 
 async function api(action, extra={}) {
   const res = await fetch(API_URL, {
