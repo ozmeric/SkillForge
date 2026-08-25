@@ -19,11 +19,23 @@
   ::-webkit-scrollbar { width:6px; height:6px; }
   ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
   input, select, textarea { font-family:'Inter',system-ui,sans-serif; }
+  .mobile-view-switcher {
+    -webkit-appearance:none; appearance:none;
+    background-color:#142238;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%237a9cc5'><path d='M5.5 7.5l4.5 5 4.5-5z'/></svg>");
+    background-repeat:no-repeat;
+    background-position:right 16px center;
+    background-size:16px;
+    padding-right:44px !important;
+    border-bottom:2px solid #14b8a6 !important;
+  }
   @media(max-width:760px) {
     .desktop-sidebar { display:none !important; }
     .bottom-nav { display:flex !important; }
     .mobile-view-switcher { display:block !important; }
-    .content-area { padding-bottom:76px !important; }
+    .content-area { padding-bottom:100px !important; }
+    .header-title-full { display:none !important; }
+    .header-title-short { display:inline !important; }
   }
 </style>
 </head>
@@ -36,7 +48,7 @@
 // CONFIG — customize per client deployment
 // ══════════════════════════════════════════════════════════════════════
 const CONFIG = {
-  companyName:  "Necat Manufacturing",
+  companyName:  "Necat's Factory",
   companyShort: "Necat",
   primaryColor: "#0a1628",
   accentColor:  "#14b8a6",
@@ -85,8 +97,8 @@ const S = {
   root: {display:"flex",flexDirection:"column",height:"100vh",background:CONFIG.primaryColor,color:"#e2e8f0",fontFamily:"'Inter',system-ui,sans-serif",overflow:"hidden"},
   header: {background:"#0d1f3c",borderBottom:"1px solid #1e3a5f",padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
   body: {flex:1, display:"flex", overflow:"hidden"},
-  sidebar: {width:220,background:"#0d1f3c",borderRight:"1px solid #1e3a5f",overflowY:"auto",flexShrink:0,padding:"8px 0"},
-  content: {flex:1,overflowY:"auto",padding:20},
+  sidebar: {width:220,background:"#0d1f3c",borderRight:"1px solid #1e3a5f",overflowY:"auto",flexShrink:0,padding:"8px 0 32px"},
+  content: {flex:1,overflowY:"auto",padding:"20px 20px 40px 20px"},
   card: {background:"#0d1f3c",border:"1px solid #1e3a5f",borderRadius:12,padding:16,marginBottom:12},
   input: {width:"100%",background:"#071020",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px 12px",color:"#f8f0d8",fontSize:14,fontFamily:"inherit",outline:"none"},
   label: {display:"block",fontSize:11,fontWeight:700,color:"#4a6fa5",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6},
@@ -111,6 +123,9 @@ const S = {
 const TYPE_COLORS = { S:"#ef4444", Q:"#06b6d4", P:"#14b8a6", H:"#8b5cf6", "O+":"#f59e0b", "P/Q":"#06b6d4", "P/S":"#ef4444" };
 const PoweredBy = () => e("div", {style:{fontSize:10, color:"#4a6fa5", letterSpacing:"0.03em", whiteSpace:"nowrap"}},
   "Powered by ", e("span", {style:{color:"#7a9cc5", fontWeight:700}}, "BuildFlow"), " · Weblina LLC");
+const Footer = () => e("div", {style:{position:"fixed", bottom:0, left:0, right:0, height:24,
+  display:"flex", alignItems:"center", justifyContent:"center", background:"#0d1f3c",
+  borderTop:"1px solid #1e3a5f", zIndex:500}}, e(PoweredBy));
 function typeColor(code){ return TYPE_COLORS[code] || "#4a6fa5"; }
 function typeLabel(code){
   const found = CONFIG.trainingTypes.find(t=>t.code===code);
@@ -176,7 +191,7 @@ const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
         )
       )
       ,
-      e("div", {style:{textAlign:"center", marginTop:24}}, e(PoweredBy))
+      e(Footer)
     )
   );
 };
@@ -273,11 +288,10 @@ const EmployeeApp = ({ employee, onLogout }) => {
       e("div", {style:{display:"flex",alignItems:"center",gap:10}},
         e("div", {style:{width:32,height:32,borderRadius:8,background:CONFIG.accentColor,display:"flex",
           alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#04211d"}}, emp.name.charAt(0)),
-        e("span", {style:{fontWeight:800,fontSize:15,color:"#f8f0d8"}}, emp.name)
+        e("span", {style:{fontWeight:800,fontSize:15,color:"#f8f0d8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:120}}, emp.name)
       ),
       e("div", {style:{display:"flex",alignItems:"center",gap:14}},
         e("span", {style:S.badge(CONFIG.accentColor)}, "⭐ " + (emp.points||0) + " pts"),
-        e(PoweredBy),
         e("button", {style:{...S.btn("ghost"), padding:"6px 10px", fontSize:12}, onClick:onLogout}, "Log out")
       )
     ),
@@ -367,7 +381,7 @@ const EmployeeApp = ({ employee, onLogout }) => {
         )
       )
     ),
-    e("div", {className:"bottom-nav", style:{display:"none", position:"fixed", bottom:0, left:0, right:0,
+    e("div", {className:"bottom-nav", style:{display:"none", position:"fixed", bottom:24, left:0, right:0,
       background:"#0d1f3c", borderTop:"1px solid #1e3a5f", padding:"6px 0"}},
       NavItems.map(n => e("div", {key:n.id, onClick:()=>setView(n.id),
         style:{flex:1, textAlign:"center", padding:"6px 0", cursor:"pointer",
@@ -376,6 +390,7 @@ const EmployeeApp = ({ employee, onLogout }) => {
         e("div", {style:{fontSize:10, fontWeight:700, marginTop:2}}, n.label)
       ))
     ),
+    e(Footer),
 
     activeTraining && !showQuiz && e("div", {style:S.modalOverlay, onClick:()=>setActiveTraining(null)},
       e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
@@ -442,16 +457,16 @@ const AdminApp = ({ pin, onLogout }) => {
       e("div", {style:{display:"flex",alignItems:"center",gap:10}},
         e("div", {style:{width:32,height:32,borderRadius:8,background:CONFIG.accentColor,display:"flex",
           alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16,color:"#04211d"}}, CONFIG.logoText),
-        e("span", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8"}}, CONFIG.companyName + " — Admin")
+        e("span", {className:"header-title-full", style:{fontWeight:800,fontSize:16,color:"#f8f0d8"}}, CONFIG.companyName + " — Admin"),
+        e("span", {className:"header-title-short", style:{display:"none",fontWeight:800,fontSize:15,color:"#f8f0d8"}}, CONFIG.companyName)
       ),
       e("div", {style:{display:"flex",alignItems:"center",gap:14}},
-        e(PoweredBy),
         e("button", {style:{...S.btn("ghost"),padding:"6px 10px",fontSize:12}, onClick:onLogout}, "Log out")
       )
     ),
     e("select", {className:"mobile-view-switcher", value:view, onChange:ev=>setView(ev.target.value),
-      style:{display:"none", width:"100%", background:"#0d1f3c", color:"#f8f0d8", border:"none",
-        borderBottom:"1px solid #1e3a5f", padding:"12px 16px", fontSize:14, fontWeight:700, fontFamily:"inherit"}},
+      style:{display:"none", width:"100%", color:"#f8f0d8", border:"none",
+        padding:"14px 16px", fontSize:14, fontWeight:700, fontFamily:"inherit", cursor:"pointer"}},
       NavItems.map(n => e("option", {key:n.id, value:n.id}, n.icon + "  " + n.label))
     ),
     e("div", {style:S.body},
@@ -469,7 +484,8 @@ const AdminApp = ({ pin, onLogout }) => {
         view==="alerts" ? e(AlertsView, {alerts, jobDescriptions, reload, pin}) :
         view==="suggestions" ? e(SuggestionsView, {suggestions, employees, reload, pin}) : null
       )
-    )
+    ),
+    e(Footer)
   );
 };
 
