@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>TrainFlow</title>
+<title>SkillForge</title>
+<link rel="icon" type="image/x-icon" href="./favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0a1628">
-<link rel="apple-touch-icon" href="./icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -819,14 +822,14 @@ const App = () => {
   const [session, setSession] = useState(null); // {type:"employee", employee} | {type:"admin", pin}
 
   useEffect(() => {
-    const saved = sessionStorage.getItem("trainflow_session");
+    const saved = sessionStorage.getItem("skillforge_session");
     if (saved) { try { setSession(JSON.parse(saved)); } catch(e) {} }
   }, []);
 
   const setAndPersist = (s) => {
     setSession(s);
-    if (s) sessionStorage.setItem("trainflow_session", JSON.stringify(s));
-    else sessionStorage.removeItem("trainflow_session");
+    if (s) sessionStorage.setItem("skillforge_session", JSON.stringify(s));
+    else sessionStorage.removeItem("skillforge_session");
   };
 
   if (!session) return e(LoginGate, {
