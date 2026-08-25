@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>TrainFlow</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0a1628">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; height:100%; background:#0a1628; }
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
+  input, select, textarea { font-family:'Inter',system-ui,sans-serif; }
+  @media(max-width:760px) {
+    .desktop-sidebar { display:none !important; }
+    .bottom-nav { display:flex !important; }
+    .content-area { padding-bottom:76px !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+//<![CDATA[
+
+// ══════════════════════════════════════════════════════════════════════
+// CONFIG — customize per client deployment
+// ══════════════════════════════════════════════════════════════════════
+const CONFIG = {
+  companyName:  "Acme Manufacturing",
+  companyShort: "Acme",
+  primaryColor: "#0a1628",
+  accentColor:  "#14b8a6",
+  logoText:     "A",
+
+  trainingTypes: [
+    {code:"S",   label:"Safety"},
+    {code:"Q",   label:"Quality"},
+    {code:"P",   label:"Production"},
+    {code:"H",   label:"HR"},
+    {code:"O+",  label:"Other / Ops+"},
+  ],
+  documentFormats: [
+    "Presentation with AI audio",
+    "Video with AI audio",
+    "OPL with AI audio",
+    "Video+Presentation",
+    "Document",
+  ],
+  defaultPoints: 10,
+  defaultRegularDays: 7,
+  defaultExpeditedDays: 3,
+  notifyEmail: "hello@acme.com",
+  sheetId: "YOUR_GOOGLE_SHEET_ID_HERE",
+};
+
+const API_URL = "https://your-worker.workers.dev/"; // ← replace with your Cloudflare Worker URL
+
+async function api(action, extra={}) {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({ action, ...extra })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+const { useState, useEffect, useRef } = React;
+const e = React.createElement;
+
+// ══════════════════════════════════════════════════════════════════════
+// STYLE HELPERS
+// ══════════════════════════════════════════════════════════════════════
+const S = {
+  root: {display:"flex",flexDirection:"column",height:"100vh",background:CONFIG.primaryColor,color:"#e2e8f0",fontFamily:"'Inter',system-ui,sans-serif",overflow:"hidden"},
+  header: {background:"#0d1f3c",borderBottom:"1px solid #1e3a5f",padding:"0 20px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0},
+  body: {flex:1, display:"flex", overflow:"hidden"},
+  sidebar: {width:220,background:"#0d1f3c",borderRight:"1px solid #1e3a5f",overflowY:"auto",flexShrink:0,padding:"8px 0"},
+  content: {flex:1,overflowY:"auto",padding:20},
+  card: {background:"#0d1f3c",border:"1px solid #1e3a5f",borderRadius:12,padding:16,marginBottom:12},
+  input: {width:"100%",background:"#071020",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px 12px",color:"#f8f0d8",fontSize:14,fontFamily:"inherit",outline:"none"},
+  label: {display:"block",fontSize:11,fontWeight:700,color:"#4a6fa5",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6},
+  btn: (variant) => variant === "ghost"
+    ? {background:"transparent",border:"1px solid #1e3a5f",color:"#7a9cc5",borderRadius:8,padding:"10px 16px",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"inherit"}
+    : variant === "danger"
+    ? {background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"10px 16px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}
+    : {background:CONFIG.accentColor,color:"#04211d",border:"none",borderRadius:8,padding:"10px 16px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"},
+  sideLabel: {fontSize:10,fontWeight:700,color:"#2a4a7f",textTransform:"uppercase",letterSpacing:"0.12em",padding:"8px 16px 4px"},
+  sideItem: (active) => ({
+    padding:"10px 16px",cursor:"pointer",fontSize:13,fontWeight:active?700:400,
+    color:active?CONFIG.accentColor:"#7a9cc5",
+    background:active?"#142238":"transparent",
+    borderLeft:active?`2px solid ${CONFIG.accentColor}`:"2px solid transparent",
+    display:"flex",alignItems:"center",gap:8,userSelect:"none"
+  }),
+  badge: (bg,fg) => ({display:"inline-block",fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:bg,color:fg||"#04211d",letterSpacing:"0.03em"}),
+  modalOverlay: {position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16},
+  modal: {background:"#0d1f3c",border:"1px solid #1e3a5f",borderRadius:14,padding:20,width:"100%",maxWidth:480,maxHeight:"88vh",overflowY:"auto"},
+};
+
+const TYPE_COLORS = { S:"#ef4444", Q:"#06b6d4", P:"#14b8a6", H:"#8b5cf6", "O+":"#f59e0b", "P/Q":"#06b6d4", "P/S":"#ef4444" };
+function typeColor(code){ return TYPE_COLORS[code] || "#4a6fa5"; }
+function typeLabel(code){
+  const found = CONFIG.trainingTypes.find(t=>t.code===code);
+  return found ? found.label : code;
+}
+function statusColor(status){
+  return status==="Done" ? "#10b981" : status==="Overdue" ? "#ef4444" : "#f59e0b";
+}
+function fmtDate(s){ if(!s) return "—"; return s.substring(0,10); }
+function isOverdue(dueDate, status){
+  if (status==="Done" || !dueDate) return false;
+  return !(new Date(dueDate) >= new Date(new Date().toISOString().substring(0,10)));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// LOGIN GATE
+// ══════════════════════════════════════════════════════════════════════
+const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
+  const [mode, setMode] = useState(null); // null | "employee" | "admin"
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setErr(""); setBusy(true);
+    try {
+      if (mode === "employee") {
+        const data = await api("employeeLogin", { employeePin: pin });
+        onEmployeeLogin(data.employee);
+      } else {
+        await api("getAdminOverview", { pin });
+        onAdminLogin(pin);
+      }
+    } catch (ex) {
+      setErr(mode==="employee" ? "PIN not recognized." : "Incorrect admin PIN.");
+    }
+    setBusy(false);
+  };
+
+  return e("div", {style:{...S.root, alignItems:"center", justifyContent:"center"}},
+    e("div", {style:{width:"100%", maxWidth:360, padding:24}},
+      e("div", {style:{textAlign:"center", marginBottom:28}},
+        e("div", {style:{width:56,height:56,borderRadius:14,background:CONFIG.accentColor,
+          display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:24,
+          color:"#04211d", margin:"0 auto 14px"}}, CONFIG.logoText),
+        e("div", {style:{fontWeight:900,fontSize:22,color:"#f8f0d8",letterSpacing:"-0.5px"}}, CONFIG.companyName),
+        e("div", {style:{fontSize:12,color:"#4a6fa5",marginTop:4,letterSpacing:"0.06em",textTransform:"uppercase"}}, "Training & Recognition")
+      ),
+      !mode ? e("div", {style:{display:"flex",flexDirection:"column",gap:12}},
+        e("button", {style:{...S.btn(),padding:"14px 16px",fontSize:15}, onClick:()=>setMode("employee")}, "I'm an Employee"),
+        e("button", {style:{...S.btn("ghost"),padding:"14px 16px",fontSize:15}, onClick:()=>setMode("admin")}, "Admin Login")
+      ) : e("div", {style:S.card},
+        e("label", {style:S.label}, mode==="employee" ? "Enter your PIN" : "Enter admin PIN"),
+        e("input", {style:{...S.input, textAlign:"center", fontSize:22, letterSpacing:6}, type:"tel",
+          value:pin, maxLength:8, autoFocus:true,
+          onChange:ev=>setPin(ev.target.value.replace(/[^0-9]/g,"")),
+          onKeyDown:ev=>{ if(ev.key==="Enter") submit(); }
+        }),
+        err && e("div", {style:{color:"#ef4444",fontSize:12,marginTop:8}}, err),
+        e("div", {style:{display:"flex",gap:8,marginTop:16}},
+          e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>{setMode(null);setPin("");setErr("");}}, "Back"),
+          e("button", {style:{...S.btn(),flex:1}, disabled:busy||!pin, onClick:submit}, busy?"...":"Continue")
+        )
+      )
+    )
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// SHARED: QUIZ MODAL
+// ══════════════════════════════════════════════════════════════════════
+const QuizModal = ({ training, onSubmit, onClose }) => {
+  const [answers, setAnswers] = useState({});
+  const quiz = training.quiz || [];
+  const allAnswered = quiz.every((q,i)=>answers[i]!==undefined);
+
+  const submit = () => {
+    let correct = 0;
+    quiz.forEach((q,i)=>{ if (answers[i]===q.correctIndex) correct++; });
+    const score = quiz.length ? Math.round((correct/quiz.length)*100) : 100;
+    onSubmit(score);
+  };
+
+  return e("div", {style:S.modalOverlay, onClick:onClose},
+    e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+      e("div", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8",marginBottom:4}}, "Quiz: " + training.name),
+      e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:16}}, quiz.length + " question" + (quiz.length===1?"":"s")),
+      quiz.map((q,i)=> e("div", {key:i, style:{marginBottom:16}},
+        e("div", {style:{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:8}}, (i+1)+". "+q.question),
+        (q.options||[]).map((opt,oi)=> e("div", {key:oi,
+          onClick:()=>setAnswers(a=>({...a,[i]:oi})),
+          style:{padding:"8px 12px",borderRadius:8,marginBottom:6,cursor:"pointer",fontSize:13,
+            border: answers[i]===oi ? `1px solid ${CONFIG.accentColor}` : "1px solid #1e3a5f",
+            background: answers[i]===oi ? "#142238" : "transparent",
+            color: answers[i]===oi ? CONFIG.accentColor : "#cbd5e1"}
+        }, opt))
+      )),
+      e("div", {style:{display:"flex",gap:8,marginTop:8}},
+        e("button", {style:{...S.btn("ghost"),flex:1}, onClick:onClose}, "Cancel"),
+        e("button", {style:{...S.btn(),flex:1}, disabled:!allAnswered, onClick:submit}, "Submit Quiz")
+      )
+    )
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// EMPLOYEE APP
+// ══════════════════════════════════════════════════════════════════════
+const EmployeeApp = ({ employee, onLogout }) => {
+  const [view, setView] = useState("trainings");
+  const [emp, setEmp] = useState(employee);
+  const [trainings, setTrainings] = useState([]);
+  const [progress, setProgress] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [activeTraining, setActiveTraining] = useState(null); // {training, progress}
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [suggestionText, setSuggestionText] = useState("");
+
+  const reload = () => {
+    api("getTrainings").then(d=>setTrainings(d.trainings||[]));
+    api("getProgressForEmployee", {employeeId:emp.id}).then(d=>setProgress(d.progress||[]));
+    api("getAlerts").then(d=>setAlerts(d.alerts||[]));
+    api("getSuggestions").then(d=>setSuggestions((d.suggestions||[]).filter(s=>s.employeeId===emp.id)));
+    api("getEmployees").then(d=>setAllEmployees(d.employees||[]));
+  };
+  useEffect(reload, []);
+
+  const trainingsById = {}; trainings.forEach(t=>trainingsById[t.id]=t);
+  const myProgress = progress.map(p=>({...p, training: trainingsById[p.trainingId]})).filter(p=>p.training);
+  const byPhase = {};
+  myProgress.forEach(p=>{ (byPhase[p.training.phase]=byPhase[p.training.phase]||[]).push(p); });
+  const phases = Object.keys(byPhase).map(Number).sort((a,b)=>a-b);
+
+  const doneCount = myProgress.filter(p=>p.status==="Done").length;
+  const pct = myProgress.length ? Math.round((doneCount/myProgress.length)*100) : 0;
+
+  const myAlerts = alerts.filter(a => !a.targetJobDescriptionIds.length || a.targetJobDescriptionIds.indexOf(emp.jobDescriptionId)>=0);
+
+  const openTraining = (p) => setActiveTraining(p);
+
+  const markComplete = async (score) => {
+    await api("completeTraining", {progressId:activeTraining.id, quizScore:score});
+    setShowQuiz(false); setActiveTraining(null);
+    reload();
+  };
+
+  const NavItems = [
+    {id:"trainings", label:"My Trainings", icon:"📋"},
+    {id:"alerts", label:"Alerts", icon:"🔔"},
+    {id:"suggestions", label:"Suggestions", icon:"💡"},
+    {id:"leaderboard", label:"Leaderboard", icon:"🏆"},
+  ];
+
+  return e("div", {style:S.root},
+    e("div", {style:S.header},
+      e("div", {style:{display:"flex",alignItems:"center",gap:10}},
+        e("div", {style:{width:32,height:32,borderRadius:8,background:CONFIG.accentColor,display:"flex",
+          alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#04211d"}}, emp.name.charAt(0)),
+        e("span", {style:{fontWeight:800,fontSize:15,color:"#f8f0d8"}}, emp.name)
+      ),
+      e("div", {style:{display:"flex",alignItems:"center",gap:10}},
+        e("span", {style:S.badge(CONFIG.accentColor)}, "⭐ " + (emp.points||0) + " pts"),
+        e("button", {style:{...S.btn("ghost"), padding:"6px 10px", fontSize:12}, onClick:onLogout}, "Log out")
+      )
+    ),
+    e("div", {style:S.body},
+      e("div", {style:S.sidebar, className:"desktop-sidebar"},
+        e("div", {style:S.sideLabel}, "Menu"),
+        NavItems.map(n => e("div", {key:n.id, style:S.sideItem(view===n.id), onClick:()=>setView(n.id)},
+          e("span", null, n.icon), n.label))
+      ),
+      e("div", {style:S.content, className:"content-area"},
+
+        view==="trainings" && e("div", null,
+          e("div", {style:{...S.card, background:"linear-gradient(135deg,#0d1e35,#091526)"}},
+            e("div", {style:{display:"flex",justifyContent:"space-between",marginBottom:8}},
+              e("span", {style:{fontWeight:700,fontSize:13}}, "Overall Progress"),
+              e("span", {style:{fontWeight:800,color:CONFIG.accentColor}}, pct+"%")
+            ),
+            e("div", {style:{height:8,borderRadius:4,background:"#1e3a5f",overflow:"hidden"}},
+              e("div", {style:{height:"100%",width:pct+"%",background:CONFIG.accentColor}}))
+          ),
+          phases.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13,textAlign:"center",padding:30}}, "No trainings assigned yet."),
+          phases.map(phase => e("div", {key:phase, style:{marginBottom:20}},
+            e("div", {style:{fontSize:12,fontWeight:800,color:"#4a6fa5",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}, "Phase "+phase),
+            byPhase[phase].sort((a,b)=>(a.training.name||"").localeCompare(b.training.name||"")).map(p => {
+              const overdue = isOverdue(p.dueDate, p.status);
+              return e("div", {key:p.id, style:{...S.card, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between"},
+                onClick:()=>openTraining(p)},
+                e("div", {style:{flex:1, minWidth:0}},
+                  e("div", {style:{display:"flex",gap:8,alignItems:"center",marginBottom:4}},
+                    e("span", {style:S.badge(typeColor(p.training.type))}, typeLabel(p.training.type)),
+                    e("span", {style:{fontSize:11,color:"#4a6fa5"}}, p.training.format)
+                  ),
+                  e("div", {style:{fontWeight:700,fontSize:14,color:"#f8f0d8"}}, p.training.name),
+                  e("div", {style:{fontSize:11,color: overdue ? "#ef4444" : "#7a9cc5", marginTop:2}},
+                    p.status==="Done" ? ("Completed "+fmtDate(p.completedDate)) : ((overdue?"Overdue — ":"Due ")+fmtDate(p.dueDate)))
+                ),
+                e("span", {style:S.badge(statusColor(overdue?"Overdue":p.status), p.status==="Done"?"#fff":"#04211d")}, overdue?"Overdue":p.status)
+              );
+            })
+          ))
+        ),
+
+        view==="alerts" && e("div", null,
+          myAlerts.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13,textAlign:"center",padding:30}}, "No alerts right now."),
+          myAlerts.map(a => {
+            const acked = (a.acks||[]).indexOf(emp.id) >= 0;
+            return e("div", {key:a.id, style:S.card},
+              e("div", {style:{display:"flex",gap:8,alignItems:"center",marginBottom:6}},
+                e("span", {style:S.badge(typeColor(a.type[0]))}, a.type),
+                acked && e("span", {style:S.badge("#10b981","#fff")}, "Acknowledged")
+              ),
+              e("div", {style:{fontWeight:800,fontSize:14,color:"#f8f0d8",marginBottom:4}}, a.title),
+              e("div", {style:{fontSize:13,color:"#cbd5e1",marginBottom:10}}, a.message),
+              a.contentUrl && e("a", {href:a.contentUrl, target:"_blank", style:{fontSize:12,color:CONFIG.accentColor}}, "View content →"),
+              !acked && e("div", {style:{marginTop:10}},
+                e("button", {style:S.btn(), onClick: async ()=>{ await api("ackAlert",{alertId:a.id, employeeId:emp.id}); reload(); }}, "Acknowledge"))
+            );
+          })
+        ),
+
+        view==="suggestions" && e("div", null,
+          e("div", {style:S.card},
+            e("label", {style:S.label}, "Share a suggestion"),
+            e("textarea", {style:{...S.input, minHeight:80}, value:suggestionText,
+              onChange:ev=>setSuggestionText(ev.target.value), placeholder:"What could we improve?"}),
+            e("button", {style:{...S.btn(), marginTop:10}, disabled:!suggestionText.trim(),
+              onClick: async ()=>{ await api("addSuggestion",{suggestion:{employeeId:emp.id, text:suggestionText}}); setSuggestionText(""); reload(); }},
+              "Submit")
+          ),
+          e("div", {style:{fontSize:12,fontWeight:800,color:"#4a6fa5",textTransform:"uppercase",margin:"16px 0 8px"}}, "Your Suggestions"),
+          suggestions.map(s => e("div", {key:s.id, style:S.card},
+            e("div", {style:{fontSize:13,color:"#e2e8f0",marginBottom:6}}, s.text),
+            e("span", {style:S.badge(s.status==="Approved"?"#10b981":s.status==="Rejected"?"#ef4444":"#f59e0b","#fff")}, s.status)
+          ))
+        ),
+
+        view==="leaderboard" && e("div", null,
+          [...allEmployees].sort((a,b)=>(b.points||0)-(a.points||0)).map((emp2,i) => e("div", {key:emp2.id,
+            style:{...S.card, display:"flex",alignItems:"center",justifyContent:"space-between",
+              border: emp2.id===emp.id ? `1px solid ${CONFIG.accentColor}` : "1px solid #1e3a5f"}},
+            e("div", {style:{display:"flex",alignItems:"center",gap:10}},
+              e("span", {style:{fontWeight:900,color:"#4a6fa5",width:24}}, "#"+(i+1)),
+              e("span", {style:{fontWeight:700,color:"#f8f0d8"}}, emp2.name)
+            ),
+            e("span", {style:S.badge(CONFIG.accentColor)}, (emp2.points||0)+" pts")
+          ))
+        )
+      )
+    ),
+    e("div", {className:"bottom-nav", style:{display:"none", position:"fixed", bottom:0, left:0, right:0,
+      background:"#0d1f3c", borderTop:"1px solid #1e3a5f", padding:"6px 0"}},
+      NavItems.map(n => e("div", {key:n.id, onClick:()=>setView(n.id),
+        style:{flex:1, textAlign:"center", padding:"6px 0", cursor:"pointer",
+          color: view===n.id ? CONFIG.accentColor : "#7a9cc5"}},
+        e("div", {style:{fontSize:18}}, n.icon),
+        e("div", {style:{fontSize:10, fontWeight:700, marginTop:2}}, n.label)
+      ))
+    ),
+
+    activeTraining && !showQuiz && e("div", {style:S.modalOverlay, onClick:()=>setActiveTraining(null)},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{display:"flex",gap:8,marginBottom:8}},
+          e("span", {style:S.badge(typeColor(activeTraining.training.type))}, typeLabel(activeTraining.training.type))
+        ),
+        e("div", {style:{fontWeight:800,fontSize:18,color:"#f8f0d8",marginBottom:6}}, activeTraining.training.name),
+        e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:16}}, activeTraining.training.format + " · Phase " + activeTraining.training.phase),
+        activeTraining.training.contentUrl ? e("a", {href:activeTraining.training.contentUrl, target:"_blank",
+          style:{...S.btn(), display:"block", textAlign:"center", textDecoration:"none", marginBottom:10}}, "▶ Open Training Content")
+          : e("div", {style:{fontSize:12,color:"#f59e0b",marginBottom:10}}, "No content link set yet — check with your supervisor."),
+        activeTraining.status!=="Done" ? e("div", null,
+          e("button", {style:{...S.btn(), width:"100%"}, onClick:()=>{
+            if ((activeTraining.training.quiz||[]).length) setShowQuiz(true);
+            else markComplete("");
+          }}, (activeTraining.training.quiz||[]).length ? "Take Quiz & Complete" : "Mark Complete"),
+          e("button", {style:{...S.btn("ghost"), width:"100%", marginTop:8}, onClick:()=>setActiveTraining(null)}, "Close")
+        ) : e("div", null,
+          e("div", {style:{fontSize:13,color:"#10b981",fontWeight:700,marginBottom:8}},
+            "✓ Completed " + fmtDate(activeTraining.completedDate) + (activeTraining.quizScore!=="" && activeTraining.quizScore!=null ? (" · Quiz: "+activeTraining.quizScore+"%") : "")),
+          e("button", {style:{...S.btn("ghost"), width:"100%"}, onClick:()=>setActiveTraining(null)}, "Close")
+        )
+      )
+    ),
+    activeTraining && showQuiz && e(QuizModal, {training:activeTraining.training, onSubmit:markComplete, onClose:()=>setShowQuiz(false)})
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// ADMIN APP
+// ══════════════════════════════════════════════════════════════════════
+const AdminApp = ({ pin, onLogout }) => {
+  const [view, setView] = useState("jobs");
+  const [jobDescriptions, setJobDescriptions] = useState([]);
+  const [trainings, setTrainings] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [progress, setProgress] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const reload = () => {
+    api("getJobDescriptions").then(d=>setJobDescriptions(d.jobDescriptions||[]));
+    api("getTrainings").then(d=>setTrainings(d.trainings||[]));
+    api("getEmployees").then(d=>setEmployees(d.employees||[]));
+    api("getProgress").then(d=>setProgress(d.progress||[]));
+    api("getAlerts").then(d=>setAlerts(d.alerts||[]));
+    api("getSuggestions").then(d=>setSuggestions(d.suggestions||[]));
+    setLoaded(true);
+  };
+  useEffect(reload, []);
+
+  const NavItems = [
+    {id:"jobs", label:"Job Descriptions", icon:"🧑‍🏭"},
+    {id:"plan", label:"Master Training Plan", icon:"📚"},
+    {id:"employees", label:"Employees", icon:"👥"},
+    {id:"matrix", label:"Skill Matrix", icon:"📊"},
+    {id:"alerts", label:"Alerts", icon:"🔔"},
+    {id:"suggestions", label:"Suggestions", icon:"💡"},
+  ];
+
+  return e("div", {style:S.root},
+    e("div", {style:S.header},
+      e("div", {style:{display:"flex",alignItems:"center",gap:10}},
+        e("div", {style:{width:32,height:32,borderRadius:8,background:CONFIG.accentColor,display:"flex",
+          alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16,color:"#04211d"}}, CONFIG.logoText),
+        e("span", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8"}}, CONFIG.companyName + " — Admin")
+      ),
+      e("button", {style:{...S.btn("ghost"),padding:"6px 10px",fontSize:12}, onClick:onLogout}, "Log out")
+    ),
+    e("div", {style:S.body},
+      e("div", {style:S.sidebar, className:"desktop-sidebar"},
+        e("div", {style:S.sideLabel}, "Admin"),
+        NavItems.map(n => e("div", {key:n.id, style:S.sideItem(view===n.id), onClick:()=>setView(n.id)},
+          e("span", null, n.icon), n.label))
+      ),
+      e("div", {style:S.content, className:"content-area"},
+        !loaded ? e("div", {style:{textAlign:"center",padding:40,color:"#7a9cc5"}}, "Loading...") :
+        view==="jobs" ? e(JobsView, {jobDescriptions, reload, pin, trainingsCount:(jd)=>trainings.filter(t=>!t.jobDescriptionIds.length||t.jobDescriptionIds.indexOf(jd)>=0).length}) :
+        view==="plan" ? e(PlanView, {trainings, jobDescriptions, reload, pin}) :
+        view==="employees" ? e(EmployeesView, {employees, jobDescriptions, progress, trainings, reload, pin}) :
+        view==="matrix" ? e(MatrixView, {employees, trainings, progress, jobDescriptions}) :
+        view==="alerts" ? e(AlertsView, {alerts, jobDescriptions, reload, pin}) :
+        view==="suggestions" ? e(SuggestionsView, {suggestions, employees, reload, pin}) : null
+      )
+    )
+  );
+};
+
+// ── Job Descriptions ──
+const JobsView = ({ jobDescriptions, reload, pin, trainingsCount }) => {
+  const [form, setForm] = useState(null); // {id?, name, department, notes}
+  const save = async () => {
+    if (form.id) await api("updateJobDescription", {pin, job:form});
+    else await api("addJobDescription", {pin, job:form});
+    setForm(null); reload();
+  };
+  return e("div", null,
+    e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      e("h2", {style:{margin:0,fontSize:18,color:"#f8f0d8"}}, "Job Descriptions"),
+      e("button", {style:S.btn(), onClick:()=>setForm({name:"",department:"",notes:""})}, "+ Add Job Description")
+    ),
+    jobDescriptions.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No job descriptions yet. Add one, or seed example data from the Settings note in Employees tab."),
+    jobDescriptions.map(jd => e("div", {key:jd.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center"}},
+      e("div", null,
+        e("div", {style:{fontWeight:700,fontSize:14,color:"#f8f0d8"}}, jd.name),
+        e("div", {style:{fontSize:12,color:"#7a9cc5"}}, (jd.department||"—") + " · " + trainingsCount(jd.id) + " trainings assigned")
+      ),
+      e("div", {style:{display:"flex",gap:8}},
+        e("button", {style:S.btn("ghost"), onClick:()=>setForm(jd)}, "Edit"),
+        e("button", {style:S.btn("danger"), onClick: async ()=>{ if(confirm("Delete this job description?")){ await api("deleteJobDescription",{pin,jobId:jd.id}); reload(); } }}, "Delete")
+      )
+    )),
+    form && e("div", {style:S.modalOverlay, onClick:()=>setForm(null)},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:12}}, form.id ? "Edit Job Description" : "Add Job Description"),
+        e("label", {style:S.label}, "Name"),
+        e("input", {style:S.input, value:form.name, onChange:ev=>setForm({...form,name:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Department"),
+        e("input", {style:S.input, value:form.department, onChange:ev=>setForm({...form,department:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Notes"),
+        e("textarea", {style:{...S.input,minHeight:60}, value:form.notes, onChange:ev=>setForm({...form,notes:ev.target.value})}),
+        e("div", {style:{display:"flex",gap:8,marginTop:16}},
+          e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>setForm(null)}, "Cancel"),
+          e("button", {style:{...S.btn(),flex:1}, disabled:!form.name, onClick:save}, "Save")
+        )
+      )
+    )
+  );
+};
+
+// ── Master Training Plan ──
+const emptyTraining = () => ({phase:0, type:"S", name:"", format:CONFIG.documentFormats[0], contentUrl:"",
+  points:CONFIG.defaultPoints, regularDays:CONFIG.defaultRegularDays, expeditedDays:CONFIG.defaultExpeditedDays,
+  jobDescriptionIds:[], quiz:[]});
+
+const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
+  const [form, setForm] = useState(null);
+  const [seeding, setSeeding] = useState(false);
+  const byPhase = {};
+  trainings.forEach(t=>{ (byPhase[t.phase]=byPhase[t.phase]||[]).push(t); });
+  const phases = Object.keys(byPhase).map(Number).sort((a,b)=>a-b);
+
+  const save = async () => {
+    if (form.id) await api("updateTraining", {pin, training:form});
+    else await api("addTraining", {pin, training:form});
+    setForm(null); reload();
+  };
+
+  const toggleJD = (jdId) => {
+    const ids = form.jobDescriptionIds.includes(jdId) ? form.jobDescriptionIds.filter(x=>x!==jdId) : [...form.jobDescriptionIds, jdId];
+    setForm({...form, jobDescriptionIds:ids});
+  };
+
+  const addQuizQ = () => setForm({...form, quiz:[...form.quiz, {question:"", options:["",""], correctIndex:0}]});
+  const updateQuizQ = (i, patch) => setForm({...form, quiz: form.quiz.map((q,qi)=>qi===i?{...q,...patch}:q)});
+  const removeQuizQ = (i) => setForm({...form, quiz: form.quiz.filter((_,qi)=>qi!==i)});
+
+  return e("div", null,
+    e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16, flexWrap:"wrap", gap:8}},
+      e("h2", {style:{margin:0,fontSize:18,color:"#f8f0d8"}}, "Master Training Plan"),
+      e("div", {style:{display:"flex",gap:8}},
+        trainings.length===0 && e("button", {style:S.btn("ghost"), disabled:seeding, onClick: async ()=>{
+          setSeeding(true); await api("seedGT94",{pin}); setSeeding(false); reload();
+        }}, seeding?"Seeding...":"Seed GT R94 Example Plan"),
+        e("button", {style:S.btn(), onClick:()=>setForm(emptyTraining())}, "+ Add Training")
+      )
+    ),
+    phases.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No trainings yet."),
+    phases.map(phase => e("div", {key:phase, style:{marginBottom:20}},
+      e("div", {style:{fontSize:12,fontWeight:800,color:"#4a6fa5",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}, "Phase "+phase),
+      byPhase[phase].map(t => e("div", {key:t.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center"}},
+        e("div", {style:{minWidth:0}},
+          e("div", {style:{display:"flex",gap:8,alignItems:"center",marginBottom:4}},
+            e("span", {style:S.badge(typeColor(t.type))}, typeLabel(t.type)),
+            e("span", {style:{fontSize:11,color:"#4a6fa5"}}, t.format),
+            (t.quiz||[]).length>0 && e("span", {style:S.badge("#8b5cf6","#fff")}, (t.quiz.length)+" quiz Qs")
+          ),
+          e("div", {style:{fontWeight:700,fontSize:14,color:"#f8f0d8"}}, t.name),
+          e("div", {style:{fontSize:11,color:"#7a9cc5"}}, t.points+" pts · "+t.regularDays+"d regular / "+t.expeditedDays+"d expedited · "+
+            (t.jobDescriptionIds.length ? t.jobDescriptionIds.length+" job(s)" : "All jobs"))
+        ),
+        e("div", {style:{display:"flex",gap:8,flexShrink:0}},
+          e("button", {style:S.btn("ghost"), onClick:()=>setForm({...t})}, "Edit"),
+          e("button", {style:S.btn("danger"), onClick: async ()=>{ if(confirm("Delete this training?")){ await api("deleteTraining",{pin,trainingId:t.id}); reload(); } }}, "Delete")
+        )
+      ))
+    )),
+    form && e("div", {style:S.modalOverlay, onClick:()=>setForm(null)},
+      e("div", {style:{...S.modal, maxWidth:560}, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:12}}, form.id ? "Edit Training" : "Add Training"),
+        e("label", {style:S.label}, "Name"),
+        e("input", {style:S.input, value:form.name, onChange:ev=>setForm({...form,name:ev.target.value})}),
+        e("div", {style:{display:"flex",gap:10,marginTop:10}},
+          e("div", {style:{flex:1}},
+            e("label", {style:S.label}, "Phase"),
+            e("input", {style:S.input, type:"number", min:0, value:form.phase, onChange:ev=>setForm({...form,phase:parseInt(ev.target.value)||0})})),
+          e("div", {style:{flex:1}},
+            e("label", {style:S.label}, "Type"),
+            e("select", {style:S.input, value:form.type, onChange:ev=>setForm({...form,type:ev.target.value})},
+              CONFIG.trainingTypes.map(t=>e("option",{key:t.code,value:t.code},t.label))))
+        ),
+        e("label", {style:{...S.label,marginTop:10}}, "Format"),
+        e("select", {style:S.input, value:form.format, onChange:ev=>setForm({...form,format:ev.target.value})},
+          CONFIG.documentFormats.map(f=>e("option",{key:f,value:f},f))),
+        e("label", {style:{...S.label,marginTop:10}}, "Content URL (video / presentation link)"),
+        e("input", {style:S.input, value:form.contentUrl, placeholder:"https://...", onChange:ev=>setForm({...form,contentUrl:ev.target.value})}),
+        e("div", {style:{display:"flex",gap:10,marginTop:10}},
+          e("div", {style:{flex:1}},
+            e("label", {style:S.label}, "Points"),
+            e("input", {style:S.input, type:"number", value:form.points, onChange:ev=>setForm({...form,points:parseInt(ev.target.value)||0})})),
+          e("div", {style:{flex:1}},
+            e("label", {style:S.label}, "Regular days"),
+            e("input", {style:S.input, type:"number", value:form.regularDays, onChange:ev=>setForm({...form,regularDays:parseInt(ev.target.value)||0})})),
+          e("div", {style:{flex:1}},
+            e("label", {style:S.label}, "Expedited days"),
+            e("input", {style:S.input, type:"number", value:form.expeditedDays, onChange:ev=>setForm({...form,expeditedDays:parseInt(ev.target.value)||0})}))
+        ),
+        e("label", {style:{...S.label,marginTop:10}}, "Applies to job descriptions (none = all)"),
+        e("div", {style:{display:"flex",flexWrap:"wrap",gap:6}},
+          jobDescriptions.map(jd => e("div", {key:jd.id, onClick:()=>toggleJD(jd.id),
+            style:{padding:"6px 10px",borderRadius:8,fontSize:12,cursor:"pointer",
+              border: form.jobDescriptionIds.includes(jd.id)?`1px solid ${CONFIG.accentColor}`:"1px solid #1e3a5f",
+              color: form.jobDescriptionIds.includes(jd.id)?CONFIG.accentColor:"#7a9cc5"}}, jd.name))
+        ),
+        e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,marginBottom:8}},
+          e("label", {style:{...S.label,marginTop:0}}, "Quiz (optional)"),
+          e("button", {style:{...S.btn("ghost"),padding:"6px 10px",fontSize:12}, onClick:addQuizQ}, "+ Question")
+        ),
+        form.quiz.map((q,i)=> e("div", {key:i, style:{...S.card, padding:10, marginBottom:8}},
+          e("div", {style:{display:"flex",gap:8,marginBottom:6}},
+            e("input", {style:S.input, placeholder:"Question", value:q.question, onChange:ev=>updateQuizQ(i,{question:ev.target.value})}),
+            e("button", {style:S.btn("danger"), onClick:()=>removeQuizQ(i)}, "×")
+          ),
+          q.options.map((opt,oi)=> e("div", {key:oi, style:{display:"flex",gap:6,alignItems:"center",marginBottom:4}},
+            e("input", {type:"radio", checked:q.correctIndex===oi, onChange:()=>updateQuizQ(i,{correctIndex:oi})}),
+            e("input", {style:S.input, placeholder:"Option "+(oi+1), value:opt,
+              onChange:ev=>updateQuizQ(i,{options:q.options.map((o,idx)=>idx===oi?ev.target.value:o)})}),
+            q.options.length>2 && e("button", {style:S.btn("danger"), onClick:()=>updateQuizQ(i,{options:q.options.filter((_,idx)=>idx!==oi)})}, "×")
+          )),
+          e("button", {style:{...S.btn("ghost"),padding:"4px 8px",fontSize:11}, onClick:()=>updateQuizQ(i,{options:[...q.options,""]})}, "+ Option")
+        )),
+        e("div", {style:{display:"flex",gap:8,marginTop:16}},
+          e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>setForm(null)}, "Cancel"),
+          e("button", {style:{...S.btn(),flex:1}, disabled:!form.name, onClick:save}, "Save")
+        )
+      )
+    )
+  );
+};
+
+// ── Employees ──
+const EmployeesView = ({ employees, jobDescriptions, progress, trainings, reload, pin }) => {
+  const [form, setForm] = useState(null);
+  const [newPin, setNewPin] = useState(null);
+  const [detail, setDetail] = useState(null);
+
+  const jdName = (id) => (jobDescriptions.find(j=>j.id===id)||{}).name || "—";
+
+  const save = async () => {
+    if (form.id) { await api("updateEmployee",{pin, employee:form}); setForm(null); reload(); }
+    else {
+      const res = await api("addEmployee",{pin, employee:form});
+      setNewPin(res.pin);
+      setForm(null); reload();
+    }
+  };
+
+  const empProgress = detail ? progress.filter(p=>p.employeeId===detail.id).map(p=>({...p, training:trainings.find(t=>t.id===p.trainingId)})).filter(p=>p.training) : [];
+
+  return e("div", null,
+    e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      e("h2", {style:{margin:0,fontSize:18,color:"#f8f0d8"}}, "Employees"),
+      e("button", {style:S.btn(), onClick:()=>setForm({name:"",jobDescriptionId:jobDescriptions[0]?.id||"",hireDate:new Date().toISOString().substring(0,10)})}, "+ Add Employee")
+    ),
+    employees.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No employees yet."),
+    employees.map(emp => e("div", {key:emp.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}, onClick:()=>setDetail(emp)},
+      e("div", null,
+        e("div", {style:{fontWeight:700,fontSize:14,color:"#f8f0d8"}}, emp.name),
+        e("div", {style:{fontSize:12,color:"#7a9cc5"}}, jdName(emp.jobDescriptionId) + " · PIN " + emp.pin + " · " + (emp.points||0) + " pts")
+      ),
+      e("div", {style:{display:"flex",gap:8}, onClick:ev=>ev.stopPropagation()},
+        e("button", {style:S.btn("ghost"), onClick:()=>setForm(emp)}, "Edit"),
+        e("button", {style:S.btn("danger"), onClick: async ()=>{ if(confirm("Remove this employee?")){ await api("deleteEmployee",{pin,employeeId:emp.id}); reload(); } }}, "Delete")
+      )
+    )),
+    form && e("div", {style:S.modalOverlay, onClick:()=>setForm(null)},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:12}}, form.id ? "Edit Employee" : "Add Employee"),
+        e("label", {style:S.label}, "Name"),
+        e("input", {style:S.input, value:form.name, onChange:ev=>setForm({...form,name:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Job Description"),
+        e("select", {style:S.input, value:form.jobDescriptionId, onChange:ev=>setForm({...form,jobDescriptionId:ev.target.value})},
+          jobDescriptions.map(jd=>e("option",{key:jd.id,value:jd.id},jd.name))),
+        e("label", {style:{...S.label,marginTop:10}}, "Hire Date"),
+        e("input", {style:S.input, type:"date", value:form.hireDate, onChange:ev=>setForm({...form,hireDate:ev.target.value})}),
+        e("div", {style:{display:"flex",gap:8,marginTop:16}},
+          e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>setForm(null)}, "Cancel"),
+          e("button", {style:{...S.btn(),flex:1}, disabled:!form.name||!form.jobDescriptionId, onClick:save}, "Save")
+        )
+      )
+    ),
+    newPin && e("div", {style:S.modalOverlay, onClick:()=>setNewPin(null)},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:12}}, "Employee Created"),
+        e("div", {style:{fontSize:13,color:"#cbd5e1",marginBottom:12}}, "Share this PIN with the employee to log in:"),
+        e("div", {style:{fontSize:32,fontWeight:900,color:CONFIG.accentColor,textAlign:"center",letterSpacing:8,marginBottom:16}}, newPin),
+        e("button", {style:{...S.btn(),width:"100%"}, onClick:()=>setNewPin(null)}, "Done")
+      )
+    ),
+    detail && e("div", {style:S.modalOverlay, onClick:()=>setDetail(null)},
+      e("div", {style:{...S.modal, maxWidth:520}, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:4}}, detail.name + "'s Progress"),
+        e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:12}}, jdName(detail.jobDescriptionId)),
+        empProgress.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No trainings assigned."),
+        empProgress.map(p => e("div", {key:p.id, style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e3a5f"}},
+          e("div", {style:{fontSize:13,color:"#e2e8f0"}}, p.training.name),
+          e("span", {style:S.badge(statusColor(isOverdue(p.dueDate,p.status)?"Overdue":p.status), p.status==="Done"?"#fff":"#04211d")}, isOverdue(p.dueDate,p.status)?"Overdue":p.status)
+        )),
+        e("button", {style:{...S.btn("ghost"),width:"100%",marginTop:16}, onClick:()=>setDetail(null)}, "Close")
+      )
+    )
+  );
+};
+
+// ── Skill Matrix ──
+const MatrixView = ({ employees, trainings, progress, jobDescriptions }) => {
+  const phases = [...new Set(trainings.map(t=>t.phase))].sort((a,b)=>a-b);
+  const pctForEmpPhase = (empId, phase) => {
+    const phaseTrainingIds = trainings.filter(t=>t.phase===phase).map(t=>t.id);
+    const relevant = progress.filter(p=>p.employeeId===empId && phaseTrainingIds.indexOf(p.trainingId)>=0);
+    if (!relevant.length) return null;
+    const done = relevant.filter(p=>p.status==="Done").length;
+    return Math.round((done/relevant.length)*100);
+  };
+  const cellColor = (pct) => pct===null ? "#1e3a5f" : pct===100 ? "#10b981" : pct>0 ? "#f59e0b" : "#4a6fa5";
+
+  return e("div", null,
+    e("h2", {style:{margin:"0 0 16px",fontSize:18,color:"#f8f0d8"}}, "Skill Matrix"),
+    employees.length===0 || phases.length===0 ? e("div", {style:{color:"#7a9cc5",fontSize:13}}, "Need employees and trainings to show a matrix.") :
+    e("div", {style:{overflowX:"auto"}},
+      e("table", {style:{borderCollapse:"collapse", width:"100%", fontSize:12}},
+        e("thead", null, e("tr", null,
+          e("th", {style:{textAlign:"left",padding:8,color:"#4a6fa5",borderBottom:"1px solid #1e3a5f"}}, "Employee"),
+          phases.map(p=>e("th", {key:p, style:{padding:8,color:"#4a6fa5",borderBottom:"1px solid #1e3a5f"}}, "Phase "+p))
+        )),
+        e("tbody", null, employees.map(emp => e("tr", {key:emp.id},
+          e("td", {style:{padding:8,color:"#f8f0d8",fontWeight:700,borderBottom:"1px solid #1e3a5f"}}, emp.name),
+          phases.map(p => {
+            const pct = pctForEmpPhase(emp.id, p);
+            return e("td", {key:p, style:{padding:8,textAlign:"center",borderBottom:"1px solid #1e3a5f"}},
+              e("span", {style:{display:"inline-block",minWidth:44,padding:"3px 8px",borderRadius:6,
+                background:cellColor(pct),color:"#04211d",fontWeight:800,fontSize:11}}, pct===null?"—":pct+"%"));
+          })
+        )))
+      )
+    )
+  );
+};
+
+// ── Alerts ──
+const AlertsView = ({ alerts, jobDescriptions, reload, pin }) => {
+  const [form, setForm] = useState(null);
+  const save = async () => { await api("createAlert",{pin, alert:form}); setForm(null); reload(); };
+  const toggleJD = (jdId) => {
+    const ids = form.targetJobDescriptionIds.includes(jdId) ? form.targetJobDescriptionIds.filter(x=>x!==jdId) : [...form.targetJobDescriptionIds, jdId];
+    setForm({...form, targetJobDescriptionIds:ids});
+  };
+  return e("div", null,
+    e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+      e("h2", {style:{margin:0,fontSize:18,color:"#f8f0d8"}}, "Alerts & Bulletins"),
+      e("button", {style:S.btn(), onClick:()=>setForm({type:"Safety",title:"",message:"",contentUrl:"",targetJobDescriptionIds:[]})}, "+ Broadcast Alert")
+    ),
+    alerts.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No alerts sent yet."),
+    alerts.map(a => e("div", {key:a.id, style:S.card},
+      e("div", {style:{display:"flex",gap:8,alignItems:"center",marginBottom:6}},
+        e("span", {style:S.badge(typeColor(a.type[0]))}, a.type),
+        e("span", {style:{fontSize:11,color:"#7a9cc5"}}, (a.acks||[]).length + " acknowledged")
+      ),
+      e("div", {style:{fontWeight:800,fontSize:14,color:"#f8f0d8"}}, a.title),
+      e("div", {style:{fontSize:13,color:"#cbd5e1"}}, a.message)
+    )),
+    form && e("div", {style:S.modalOverlay, onClick:()=>setForm(null)},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{fontWeight:800,fontSize:16,marginBottom:12}}, "Broadcast Alert"),
+        e("label", {style:S.label}, "Type"),
+        e("select", {style:S.input, value:form.type, onChange:ev=>setForm({...form,type:ev.target.value})},
+          ["Safety","Quality","Production","HR"].map(t=>e("option",{key:t,value:t},t))),
+        e("label", {style:{...S.label,marginTop:10}}, "Title"),
+        e("input", {style:S.input, value:form.title, onChange:ev=>setForm({...form,title:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Message"),
+        e("textarea", {style:{...S.input,minHeight:70}, value:form.message, onChange:ev=>setForm({...form,message:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Content URL (optional)"),
+        e("input", {style:S.input, value:form.contentUrl, onChange:ev=>setForm({...form,contentUrl:ev.target.value})}),
+        e("label", {style:{...S.label,marginTop:10}}, "Target job descriptions (none = everyone)"),
+        e("div", {style:{display:"flex",flexWrap:"wrap",gap:6}},
+          jobDescriptions.map(jd => e("div", {key:jd.id, onClick:()=>toggleJD(jd.id),
+            style:{padding:"6px 10px",borderRadius:8,fontSize:12,cursor:"pointer",
+              border: form.targetJobDescriptionIds.includes(jd.id)?`1px solid ${CONFIG.accentColor}`:"1px solid #1e3a5f",
+              color: form.targetJobDescriptionIds.includes(jd.id)?CONFIG.accentColor:"#7a9cc5"}}, jd.name))
+        ),
+        e("div", {style:{display:"flex",gap:8,marginTop:16}},
+          e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>setForm(null)}, "Cancel"),
+          e("button", {style:{...S.btn(),flex:1}, disabled:!form.title, onClick:save}, "Send")
+        )
+      )
+    )
+  );
+};
+
+// ── Suggestions ──
+const SuggestionsView = ({ suggestions, employees, reload, pin }) => {
+  const [awardInput, setAwardInput] = useState({});
+  const empName = (id) => (employees.find(e2=>e2.id===id)||{}).name || "—";
+  const review = async (s, status) => {
+    await api("reviewSuggestion", {pin, suggestionId:s.id, status, pointsAwarded: status==="Approved" ? (parseInt(awardInput[s.id])||15) : 0});
+    reload();
+  };
+  return e("div", null,
+    e("h2", {style:{margin:"0 0 16px",fontSize:18,color:"#f8f0d8"}}, "Suggestion Box"),
+    suggestions.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No suggestions submitted yet."),
+    suggestions.map(s => e("div", {key:s.id, style:S.card},
+      e("div", {style:{display:"flex",justifyContent:"space-between",marginBottom:6}},
+        e("span", {style:{fontWeight:700,fontSize:13,color:"#f8f0d8"}}, empName(s.employeeId)),
+        e("span", {style:S.badge(s.status==="Approved"?"#10b981":s.status==="Rejected"?"#ef4444":"#f59e0b","#fff")}, s.status)
+      ),
+      e("div", {style:{fontSize:13,color:"#cbd5e1",marginBottom:10}}, s.text),
+      s.status==="Pending" && e("div", {style:{display:"flex",gap:8,alignItems:"center"}},
+        e("input", {style:{...S.input,width:80}, type:"number", placeholder:"pts",
+          value:awardInput[s.id]||"", onChange:ev=>setAwardInput({...awardInput,[s.id]:ev.target.value})}),
+        e("button", {style:S.btn(), onClick:()=>review(s,"Approved")}, "Approve"),
+        e("button", {style:S.btn("danger"), onClick:()=>review(s,"Rejected")}, "Reject")
+      )
+    ))
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// ROOT
+// ══════════════════════════════════════════════════════════════════════
+const App = () => {
+  const [session, setSession] = useState(null); // {type:"employee", employee} | {type:"admin", pin}
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem("trainflow_session");
+    if (saved) { try { setSession(JSON.parse(saved)); } catch(e) {} }
+  }, []);
+
+  const setAndPersist = (s) => {
+    setSession(s);
+    if (s) sessionStorage.setItem("trainflow_session", JSON.stringify(s));
+    else sessionStorage.removeItem("trainflow_session");
+  };
+
+  if (!session) return e(LoginGate, {
+    onEmployeeLogin: (employee) => setAndPersist({type:"employee", employee}),
+    onAdminLogin: (pin) => setAndPersist({type:"admin", pin})
+  });
+
+  if (session.type === "employee") return e(EmployeeApp, {employee:session.employee, onLogout:()=>setAndPersist(null)});
+  return e(AdminApp, {pin:session.pin, onLogout:()=>setAndPersist(null)});
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+
+//]]>
+</script>
+</body>
+</html>
