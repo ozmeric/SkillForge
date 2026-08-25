@@ -32,11 +32,11 @@
 // CONFIG — customize per client deployment
 // ══════════════════════════════════════════════════════════════════════
 const CONFIG = {
-  companyName:  "Acme Manufacturing",
-  companyShort: "Acme",
+  companyName:  "Necat Manufacturing",
+  companyShort: "Necat",
   primaryColor: "#0a1628",
   accentColor:  "#14b8a6",
-  logoText:     "A",
+  logoText:     "N",
 
   trainingTypes: [
     {code:"S",   label:"Safety"},
@@ -59,7 +59,7 @@ const CONFIG = {
   sheetId: "1c08y-SZs2w6bM91dOxgZ9gOmUGmgarfiUlnvvZFS2uA",
 };
 
-const API_URL = "https://script.google.com/macros/s/AKfycbx_zPR3URUF6ADhHw6qeqmgEl9FKSMBiAq_3DQLbQz7sULeOVZgOR4TgEGpQcpsMX1mzg/exec"; // Apps Script Web App URL (swap for a Cloudflare Worker URL later if you want it hidden)
+const API_URL = "https://trainflow.weblinallc.workers.dev/"; // Cloudflare Worker proxy
 
 async function api(action, extra={}) {
   const res = await fetch(API_URL, {
@@ -105,6 +105,8 @@ const S = {
 };
 
 const TYPE_COLORS = { S:"#ef4444", Q:"#06b6d4", P:"#14b8a6", H:"#8b5cf6", "O+":"#f59e0b", "P/Q":"#06b6d4", "P/S":"#ef4444" };
+const PoweredBy = () => e("div", {style:{fontSize:10, color:"#4a6fa5", letterSpacing:"0.03em", whiteSpace:"nowrap"}},
+  "Powered by ", e("span", {style:{color:"#7a9cc5", fontWeight:700}}, "BuildFlow"), " · Weblina LLC");
 function typeColor(code){ return TYPE_COLORS[code] || "#4a6fa5"; }
 function typeLabel(code){
   const found = CONFIG.trainingTypes.find(t=>t.code===code);
@@ -169,6 +171,8 @@ const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
           e("button", {style:{...S.btn(),flex:1}, disabled:busy||!pin, onClick:submit}, busy?"...":"Continue")
         )
       )
+      ,
+      e("div", {style:{textAlign:"center", marginTop:24}}, e(PoweredBy))
     )
   );
 };
@@ -267,8 +271,9 @@ const EmployeeApp = ({ employee, onLogout }) => {
           alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#04211d"}}, emp.name.charAt(0)),
         e("span", {style:{fontWeight:800,fontSize:15,color:"#f8f0d8"}}, emp.name)
       ),
-      e("div", {style:{display:"flex",alignItems:"center",gap:10}},
+      e("div", {style:{display:"flex",alignItems:"center",gap:14}},
         e("span", {style:S.badge(CONFIG.accentColor)}, "⭐ " + (emp.points||0) + " pts"),
+        e(PoweredBy),
         e("button", {style:{...S.btn("ghost"), padding:"6px 10px", fontSize:12}, onClick:onLogout}, "Log out")
       )
     ),
@@ -435,7 +440,10 @@ const AdminApp = ({ pin, onLogout }) => {
           alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16,color:"#04211d"}}, CONFIG.logoText),
         e("span", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8"}}, CONFIG.companyName + " — Admin")
       ),
-      e("button", {style:{...S.btn("ghost"),padding:"6px 10px",fontSize:12}, onClick:onLogout}, "Log out")
+      e("div", {style:{display:"flex",alignItems:"center",gap:14}},
+        e(PoweredBy),
+        e("button", {style:{...S.btn("ghost"),padding:"6px 10px",fontSize:12}, onClick:onLogout}, "Log out")
+      )
     ),
     e("div", {style:S.body},
       e("div", {style:S.sidebar, className:"desktop-sidebar"},
