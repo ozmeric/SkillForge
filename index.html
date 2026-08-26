@@ -69,6 +69,7 @@ const CONFIG = {
     "Document",
   ],
   defaultPoints: 10,
+  quizPassPercent: 80,
   defaultRegularDays: 7,
   defaultExpeditedDays: 3,
   notifyEmail: "hello@acme.com",
@@ -201,20 +202,48 @@ const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
 // ══════════════════════════════════════════════════════════════════════
 const QuizModal = ({ training, onSubmit, onClose }) => {
   const [answers, setAnswers] = useState({});
+  const [result, setResult] = useState(null); // null | {score, passed}
   const quiz = training.quiz || [];
   const allAnswered = quiz.every((q,i)=>answers[i]!==undefined);
+  const passThreshold = CONFIG.quizPassPercent || 80;
 
   const submit = () => {
     let correct = 0;
     quiz.forEach((q,i)=>{ if (answers[i]===q.correctIndex) correct++; });
     const score = quiz.length ? Math.round((correct/quiz.length)*100) : 100;
-    onSubmit(score);
+    setResult({score, passed: score >= passThreshold});
   };
+
+  const retry = () => { setAnswers({}); setResult(null); };
+
+  if (result) {
+    return e("div", {style:S.modalOverlay, onClick: result.passed ? undefined : onClose},
+      e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
+        e("div", {style:{textAlign:"center", padding:"10px 0"}},
+          e("div", {style:{fontSize:40, marginBottom:8}}, result.passed ? "✅" : "❌"),
+          e("div", {style:{fontSize:22, fontWeight:900, color: result.passed ? "#10b981" : "#ef4444", marginBottom:6}},
+            result.score + "%"),
+          e("div", {style:{fontSize:14, fontWeight:700, color:"#f8f0d8", marginBottom:6}},
+            result.passed ? "Passed!" : "Not quite — " + passThreshold + "% needed to pass"),
+          e("div", {style:{fontSize:12, color:"#7a9cc5", marginBottom:20}},
+            result.passed
+              ? "Nice work — this training will be marked complete."
+              : "Take another look and try again. You can retake this quiz as many times as you need.")
+        ),
+        e("div", {style:{display:"flex",gap:8}},
+          result.passed
+            ? e("button", {style:{...S.btn(),flex:1}, onClick:()=>onSubmit(result.score)}, "Complete Training")
+            : e("button", {style:{...S.btn(),flex:1}, onClick:retry}, "Retry Quiz")
+        )
+      )
+    );
+  }
 
   return e("div", {style:S.modalOverlay, onClick:onClose},
     e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
       e("div", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8",marginBottom:4}}, "Quiz: " + training.name),
-      e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:16}}, quiz.length + " question" + (quiz.length===1?"":"s")),
+      e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:16}},
+        quiz.length + " question" + (quiz.length===1?"":"s") + " · " + passThreshold + "% needed to pass"),
       quiz.map((q,i)=> e("div", {key:i, style:{marginBottom:16}},
         e("div", {style:{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:8}}, (i+1)+". "+q.question),
         (q.options||[]).map((opt,oi)=> e("div", {key:oi,
