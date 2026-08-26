@@ -685,6 +685,7 @@ const EmployeesView = ({ employees, jobDescriptions, progress, trainings, reload
   const [form, setForm] = useState(null);
   const [newPin, setNewPin] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [pickTrainingId, setPickTrainingId] = useState("");
 
   const jdName = (id) => (jobDescriptions.find(j=>j.id===id)||{}).name || "—";
 
@@ -698,6 +699,8 @@ const EmployeesView = ({ employees, jobDescriptions, progress, trainings, reload
   };
 
   const empProgress = detail ? progress.filter(p=>p.employeeId===detail.id).map(p=>({...p, training:trainings.find(t=>t.id===p.trainingId)})).filter(p=>p.training) : [];
+  const assignedTrainingIds = empProgress.map(p=>p.trainingId);
+  const unassignedTrainings = detail ? trainings.filter(t=>assignedTrainingIds.indexOf(t.id)<0) : [];
 
   return e("div", null,
     e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
@@ -705,7 +708,7 @@ const EmployeesView = ({ employees, jobDescriptions, progress, trainings, reload
       e("button", {style:S.btn(), onClick:()=>setForm({name:"",jobDescriptionId:jobDescriptions[0]?.id||"",hireDate:new Date().toISOString().substring(0,10)})}, "+ Add Employee")
     ),
     employees.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No employees yet."),
-    employees.map(emp => e("div", {key:emp.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}, onClick:()=>setDetail(emp)},
+    employees.map(emp => e("div", {key:emp.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}, onClick:()=>{setDetail(emp); setPickTrainingId("");}},
       e("div", null,
         e("div", {style:{fontWeight:700,fontSize:14,color:"#f8f0d8"}}, emp.name),
         e("div", {style:{fontSize:12,color:"#7a9cc5"}}, jdName(emp.jobDescriptionId) + " · PIN " + emp.pin + " · " + (emp.points||0) + " pts")
@@ -740,14 +743,34 @@ const EmployeesView = ({ employees, jobDescriptions, progress, trainings, reload
       )
     ),
     detail && e("div", {style:S.modalOverlay, onClick:()=>setDetail(null)},
-      e("div", {style:{...S.modal, maxWidth:520}, onClick:ev=>ev.stopPropagation()},
+      e("div", {style:{...S.modal, maxWidth:560}, onClick:ev=>ev.stopPropagation()},
         e("div", {style:{fontWeight:800,fontSize:16,marginBottom:4}}, detail.name + "'s Progress"),
         e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:12}}, jdName(detail.jobDescriptionId)),
         empProgress.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No trainings assigned."),
-        empProgress.map(p => e("div", {key:p.id, style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e3a5f"}},
-          e("div", {style:{fontSize:13,color:"#e2e8f0"}}, p.training.name),
-          e("span", {style:S.badge(statusColor(isOverdue(p.dueDate,p.status)?"Overdue":p.status), p.status==="Done"?"#fff":"#04211d")}, isOverdue(p.dueDate,p.status)?"Overdue":p.status)
+        empProgress.map(p => e("div", {key:p.id, style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1e3a5f",gap:8}},
+          e("div", {style:{flex:1,minWidth:0}},
+            e("div", {style:{fontSize:13,color:"#e2e8f0"}}, p.training.name),
+            p.status==="Done" && p.quizScore!=="" && p.quizScore!=null && e("div", {style:{fontSize:11,color:"#7a9cc5"}}, "Quiz: "+p.quizScore+"%")
+          ),
+          e("span", {style:S.badge(statusColor(isOverdue(p.dueDate,p.status)?"Overdue":p.status), p.status==="Done"?"#fff":"#04211d")}, isOverdue(p.dueDate,p.status)?"Overdue":p.status),
+          e("div", {style:{display:"flex",gap:6,flexShrink:0}},
+            p.status==="Done" && e("button", {style:{...S.btn("ghost"),padding:"4px 8px",fontSize:11},
+              onClick: async ()=>{ if(confirm("Reset this training back to Assigned? The employee will need to complete it (and any quiz) again. Points already earned are kept.")){ await api("resetProgress",{pin,progressId:p.id}); reload(); } }}, "Reset"),
+            e("button", {style:{...S.btn("danger"),padding:"4px 8px",fontSize:11},
+              onClick: async ()=>{ if(confirm("Remove this training assignment from "+detail.name+"?")){ await api("deassignTraining",{pin,progressId:p.id}); reload(); } }}, "Remove")
+          )
         )),
+        e("div", {style:{fontSize:12,fontWeight:800,color:"#4a6fa5",textTransform:"uppercase",margin:"18px 0 8px"}}, "Assign Another Training"),
+        e("div", {style:{display:"flex",gap:8}},
+          e("select", {style:S.input, value:pickTrainingId, onChange:ev=>setPickTrainingId(ev.target.value)},
+            e("option", {value:""}, "Select a training…"),
+            unassignedTrainings.map(t => e("option", {key:t.id, value:t.id}, "Phase "+t.phase+" — "+t.name))
+          ),
+          e("button", {style:S.btn(), disabled:!pickTrainingId, onClick: async ()=>{
+            await api("reassignTraining",{pin, employeeId:detail.id, trainingId:pickTrainingId});
+            setPickTrainingId(""); reload();
+          }}, "Assign")
+        ),
         e("button", {style:{...S.btn("ghost"),width:"100%",marginTop:16}, onClick:()=>setDetail(null)}, "Close")
       )
     )
