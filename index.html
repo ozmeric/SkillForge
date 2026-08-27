@@ -10,6 +10,10 @@
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0a1628">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://trainflow.weblinallc.workers.dev">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -175,12 +179,12 @@ const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
         e("div", {style:{fontWeight:900,fontSize:22,color:"#f8f0d8",letterSpacing:"-0.5px"}}, CONFIG.companyName),
         e("div", {style:{fontSize:12,color:"#4a6fa5",marginTop:4,letterSpacing:"0.06em",textTransform:"uppercase"}}, "Training & Recognition")
       ),
-      !mode ? e("div", {style:{display:"flex",flexDirection:"column",gap:12}},
-        e("button", {style:{...S.btn(),padding:"14px 16px",fontSize:15}, onClick:()=>setMode("employee")}, "I'm an Employee"),
-        e("button", {style:{...S.btn("ghost"),padding:"14px 16px",fontSize:15}, onClick:()=>setMode("admin")}, "Admin Login")
+      !mode ? e("div", {style:{display:"flex",flexDirection:"column",alignItems:"center",gap:14}},
+        e("button", {style:{...S.btn(),padding:"14px 16px",fontSize:15,width:"100%"}, onClick:()=>setMode("employee")}, "I'm an Employee"),
+        e("span", {style:{fontSize:12,color:"#4a6fa5",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3}, onClick:()=>setMode("admin")}, "Admin Login")
       ) : e("div", {style:S.card},
         e("label", {style:S.label}, mode==="employee" ? "Enter your PIN" : "Enter admin PIN"),
-        e("input", {style:{...S.input, textAlign:"center", fontSize:22, letterSpacing:6}, type:"tel",
+        e("input", {style:{...S.input, textAlign:"center", fontSize:22, letterSpacing:6}, type:"password", inputMode:"numeric",
           value:pin, maxLength:8, autoFocus:true,
           onChange:ev=>setPin(ev.target.value.replace(/[^0-9]/g,"")),
           onKeyDown:ev=>{ if(ev.key==="Enter") submit(); }
@@ -203,9 +207,12 @@ const LoginGate = ({ onEmployeeLogin, onAdminLogin }) => {
 const QuizModal = ({ training, onSubmit, onClose }) => {
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null); // null | {score, passed}
+  const [step, setStep] = useState(0); // current question index
   const quiz = training.quiz || [];
   const allAnswered = quiz.every((q,i)=>answers[i]!==undefined);
   const passThreshold = CONFIG.quizPassPercent || 80;
+  const isLast = step === quiz.length - 1;
+  const currentAnswered = answers[step] !== undefined;
 
   const submit = () => {
     let correct = 0;
@@ -214,7 +221,7 @@ const QuizModal = ({ training, onSubmit, onClose }) => {
     setResult({score, passed: score >= passThreshold});
   };
 
-  const retry = () => { setAnswers({}); setResult(null); };
+  const retry = () => { setAnswers({}); setResult(null); setStep(0); };
 
   if (result) {
     return e("div", {style:S.modalOverlay, onClick: result.passed ? undefined : onClose},
@@ -239,24 +246,32 @@ const QuizModal = ({ training, onSubmit, onClose }) => {
     );
   }
 
+  const q = quiz[step];
+
   return e("div", {style:S.modalOverlay, onClick:onClose},
     e("div", {style:S.modal, onClick:ev=>ev.stopPropagation()},
       e("div", {style:{fontWeight:800,fontSize:16,color:"#f8f0d8",marginBottom:4}}, "Quiz: " + training.name),
-      e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:16}},
-        quiz.length + " question" + (quiz.length===1?"":"s") + " · " + passThreshold + "% needed to pass"),
-      quiz.map((q,i)=> e("div", {key:i, style:{marginBottom:16}},
-        e("div", {style:{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:8}}, (i+1)+". "+q.question),
+      e("div", {style:{fontSize:12,color:"#7a9cc5",marginBottom:10}},
+        "Question " + (step+1) + " of " + quiz.length + " · " + passThreshold + "% needed to pass"),
+      e("div", {style:{height:6,borderRadius:3,background:"#1e3a5f",overflow:"hidden",marginBottom:18}},
+        e("div", {style:{height:"100%",width:(((step+1)/quiz.length)*100)+"%",background:CONFIG.accentColor,transition:"width 0.2s"}})),
+      q && e("div", {style:{marginBottom:6}},
+        e("div", {style:{fontSize:14,fontWeight:700,color:"#e2e8f0",marginBottom:10}}, q.question),
         (q.options||[]).map((opt,oi)=> e("div", {key:oi,
-          onClick:()=>setAnswers(a=>({...a,[i]:oi})),
-          style:{padding:"8px 12px",borderRadius:8,marginBottom:6,cursor:"pointer",fontSize:13,
-            border: answers[i]===oi ? `1px solid ${CONFIG.accentColor}` : "1px solid #1e3a5f",
-            background: answers[i]===oi ? "#142238" : "transparent",
-            color: answers[i]===oi ? CONFIG.accentColor : "#cbd5e1"}
+          onClick:()=>setAnswers(a=>({...a,[step]:oi})),
+          style:{padding:"10px 12px",borderRadius:8,marginBottom:8,cursor:"pointer",fontSize:13,
+            border: answers[step]===oi ? `1px solid ${CONFIG.accentColor}` : "1px solid #1e3a5f",
+            background: answers[step]===oi ? "#142238" : "transparent",
+            color: answers[step]===oi ? CONFIG.accentColor : "#cbd5e1"}
         }, opt))
-      )),
-      e("div", {style:{display:"flex",gap:8,marginTop:8}},
-        e("button", {style:{...S.btn("ghost"),flex:1}, onClick:onClose}, "Cancel"),
-        e("button", {style:{...S.btn(),flex:1}, disabled:!allAnswered, onClick:submit}, "Submit Quiz")
+      ),
+      e("div", {style:{display:"flex",gap:8,marginTop:14}},
+        step===0
+          ? e("button", {style:{...S.btn("ghost"),flex:1}, onClick:onClose}, "Cancel")
+          : e("button", {style:{...S.btn("ghost"),flex:1}, onClick:()=>setStep(s=>s-1)}, "Back"),
+        isLast
+          ? e("button", {style:{...S.btn(),flex:1}, disabled:!allAnswered, onClick:submit}, "Submit Quiz")
+          : e("button", {style:{...S.btn(),flex:1}, disabled:!currentAnswered, onClick:()=>setStep(s=>s+1)}, "Next")
       )
     )
   );
@@ -278,11 +293,13 @@ const EmployeeApp = ({ employee, onLogout }) => {
   const [suggestionText, setSuggestionText] = useState("");
 
   const reload = () => {
-    api("getTrainings").then(d=>setTrainings(d.trainings||[]));
-    api("getProgressForEmployee", {employeeId:emp.id}).then(d=>setProgress(d.progress||[]));
-    api("getAlerts").then(d=>setAlerts(d.alerts||[]));
-    api("getSuggestions").then(d=>setSuggestions((d.suggestions||[]).filter(s=>s.employeeId===emp.id)));
-    api("getEmployees").then(d=>setAllEmployees(d.employees||[]));
+    api("bootstrapEmployee", {employeeId:emp.id}).then(d => {
+      setTrainings(d.trainings||[]);
+      setProgress(d.progress||[]);
+      setAlerts(d.alerts||[]);
+      setSuggestions(d.suggestions||[]);
+      setAllEmployees(d.employees||[]);
+    });
   };
   useEffect(reload, []);
 
@@ -462,13 +479,15 @@ const AdminApp = ({ pin, onLogout }) => {
   const [loaded, setLoaded] = useState(false);
 
   const reload = () => {
-    api("getJobDescriptions").then(d=>setJobDescriptions(d.jobDescriptions||[]));
-    api("getTrainings").then(d=>setTrainings(d.trainings||[]));
-    api("getEmployees").then(d=>setEmployees(d.employees||[]));
-    api("getProgress").then(d=>setProgress(d.progress||[]));
-    api("getAlerts").then(d=>setAlerts(d.alerts||[]));
-    api("getSuggestions").then(d=>setSuggestions(d.suggestions||[]));
-    setLoaded(true);
+    api("bootstrapAdmin").then(d => {
+      setJobDescriptions(d.jobDescriptions||[]);
+      setTrainings(d.trainings||[]);
+      setEmployees(d.employees||[]);
+      setProgress(d.progress||[]);
+      setAlerts(d.alerts||[]);
+      setSuggestions(d.suggestions||[]);
+      setLoaded(true);
+    });
   };
   useEffect(reload, []);
 
