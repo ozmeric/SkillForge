@@ -17,6 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; padding:0; height:100%; background:#0a1628; }
@@ -126,6 +127,60 @@ const S = {
 };
 
 const TYPE_COLORS = { S:"#ef4444", Q:"#06b6d4", P:"#14b8a6", H:"#8b5cf6", "O+":"#f59e0b", "P/Q":"#06b6d4", "P/S":"#ef4444" };
+
+// ── Free video pipeline helpers (Google TTS assets -> ffmpeg.wasm assembly) ──
+let _cachedFFmpeg = null;
+function base64ToUint8(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+function uint8ToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i=0; i<bytes.length; i+=chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunkSize));
+  }
+  return btoa(binary);
+}
+async function getFFmpeg(onLog) {
+  if (_cachedFFmpeg) return _cachedFFmpeg;
+  const { createFFmpeg } = FFmpeg;
+  const ffmpeg = createFFmpeg({ log: false, progress: onLog });
+  await ffmpeg.load();
+  _cachedFFmpeg = ffmpeg;
+  return ffmpeg;
+}
+async function assembleVideoFromScenes(scenes, onStatus) {
+  const ffmpeg = await getFFmpeg();
+  const segNames = [];
+  for (let i=0; i<scenes.length; i++) {
+    onStatus("Rendering slide " + (i+1) + " of " + scenes.length + "…");
+    const scene = scenes[i];
+    ffmpeg.FS("writeFile", `img${i}.png`, base64ToUint8(scene.image));
+    const segName = `seg${i}.mp4`;
+    const vf = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
+    if (scene.audio) {
+      ffmpeg.FS("writeFile", `aud${i}.mp3`, base64ToUint8(scene.audio));
+      await ffmpeg.run("-loop","1","-i",`img${i}.png`,"-i",`aud${i}.mp3`,
+        "-c:v","libx264","-tune","stillimage","-c:a","aac","-b:a","160k","-pix_fmt","yuv420p",
+        "-vf",vf,"-shortest",segName);
+    } else {
+      // no narration for this slide (TTS failed) — hold the image for a few seconds with silence
+      await ffmpeg.run("-loop","1","-i",`img${i}.png`,"-f","lavfi","-i","anullsrc=r=44100:cl=stereo",
+        "-c:v","libx264","-tune","stillimage","-c:a","aac","-t","4","-pix_fmt","yuv420p",
+        "-vf",vf,segName);
+    }
+    segNames.push(segName);
+  }
+  onStatus("Combining slides into final video…");
+  const listContent = segNames.map(n => `file '${n}'`).join("\n");
+  ffmpeg.FS("writeFile", "concat_list.txt", new TextEncoder().encode(listContent));
+  await ffmpeg.run("-f","concat","-safe","0","-i","concat_list.txt","-c","copy","final.mp4");
+  const data = ffmpeg.FS("readFile", "final.mp4");
+  return uint8ToBase64(data);
+}
 const PoweredBy = () => e("div", {style:{fontSize:10, color:"#4a6fa5", letterSpacing:"0.03em", whiteSpace:"nowrap"}},
   "Powered by ", e("span", {style:{color:"#7a9cc5", fontWeight:700}}, "BuildFlow"), " · Weblina LLC");
 const Footer = () => e("div", {style:{position:"fixed", bottom:0, left:0, right:0, height:24,
@@ -589,6 +644,8 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
   const [seeding, setSeeding] = useState(false);
   const [synthUploading, setSynthUploading] = useState(false);
   const [synthMsg, setSynthMsg] = useState("");
+  const [freeUploading, setFreeUploading] = useState(false);
+  const [freeMsg, setFreeMsg] = useState("");
   const [videoJobs, setVideoJobs] = useState([]);
   const loadVideoJobs = () => api("getVideoJobs", {pin}).then(d=>setVideoJobs(d.jobs||[]));
   useEffect(()=>{ loadVideoJobs(); }, []);
@@ -618,7 +675,7 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
         trainings.length===0 && e("button", {style:S.btn("ghost"), disabled:seeding, onClick: async ()=>{
           setSeeding(true); await api("seedGT94",{pin}); setSeeding(false); reload();
         }}, seeding?"Seeding...":"Seed GT R94 Example Plan"),
-        e("button", {style:S.btn(), onClick:()=>{setForm(emptyTraining()); setSynthMsg("");}}, "+ Add Training")
+        e("button", {style:S.btn(), onClick:()=>{setForm(emptyTraining()); setSynthMsg(""); setFreeMsg("");}}, "+ Add Training")
       )
     ),
     videoJobs.length > 0 && e("div", {style:{marginBottom:20}},
@@ -646,7 +703,7 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
             (t.jobDescriptionIds.length ? t.jobDescriptionIds.length+" job(s)" : "All jobs"))
         ),
         e("div", {style:{display:"flex",gap:8,flexShrink:0}},
-          e("button", {style:S.btn("ghost"), onClick:()=>{setForm({...t}); setSynthMsg("");}}, "Edit"),
+          e("button", {style:S.btn("ghost"), onClick:()=>{setForm({...t}); setSynthMsg(""); setFreeMsg("");}}, "Edit"),
           e("button", {style:S.btn("danger"), onClick: async ()=>{ if(confirm("Delete this training?")){ await api("deleteTraining",{pin,trainingId:t.id}); reload(); } }}, "Delete")
         )
       ))
@@ -698,6 +755,44 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
           }),
           synthUploading && e("div", {style:{fontSize:12, color:CONFIG.accentColor, marginTop:6}}, "Uploading and starting generation…"),
           synthMsg && e("div", {style:{fontSize:12, color: synthMsg.indexOf("Error")===0||synthMsg.indexOf("failed")>=0 ? "#ef4444" : "#10b981", marginTop:6}}, synthMsg)
+        ),
+        form.id && e("div", {style:{marginTop:10, padding:10, border:"1px dashed #1e3a5f", borderRadius:8}},
+          e("label", {style:{...S.label, marginTop:0}}, "Or generate free (AI voice + slides, no avatar)"),
+          e("div", {style:{fontSize:11, color:"#7a9cc5", marginBottom:8}},
+            "Upload a .pptx (with speaker notes) or .docx. Uses Google's free Text-to-Speech tier and assembles the video right in your browser — no subscription. First run downloads a video engine (~25MB), so it can take a minute before rendering starts."),
+          e("input", {type:"file", accept:".pptx,.docx", disabled:freeUploading,
+            onChange: async (ev) => {
+              const file = ev.target.files[0];
+              if (!file) return;
+              setFreeUploading(true); setFreeMsg("Reading file…");
+              try {
+                const base64 = await new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result.split(",")[1]);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                });
+                setFreeMsg("Generating slide images and narration…");
+                const res = await api("generateFreeVideoAssets", {pin, trainingId:form.id, fileBase64:base64, fileName:file.name});
+                if (res.error) { setFreeMsg("Error: " + res.error); setFreeUploading(false); ev.target.value=""; return; }
+                setFreeMsg("Loading video engine (first time only)…");
+                const videoBase64 = await assembleVideoFromScenes(res.scenes, (msg)=>setFreeMsg(msg));
+                setFreeMsg("Uploading finished video…");
+                const uploadRes = await api("uploadGeneratedVideo", {pin, trainingId:form.id, videoBase64, fileName: res.trainingName + ".mp4"});
+                if (uploadRes.error) { setFreeMsg("Error saving video: " + uploadRes.error); }
+                else {
+                  setFreeMsg("Done! Content URL filled in automatically.");
+                  setForm(f => f ? {...f, contentUrl: uploadRes.url} : f);
+                  reload();
+                }
+              } catch(ex) {
+                setFreeMsg("Failed: " + ex.message);
+              }
+              setFreeUploading(false);
+              ev.target.value = "";
+            }
+          }),
+          freeMsg && e("div", {style:{fontSize:12, color: freeMsg.indexOf("Error")===0||freeMsg.indexOf("Failed")===0 ? "#ef4444" : CONFIG.accentColor, marginTop:6}}, freeMsg)
         ),
         e("div", {style:{display:"flex",gap:10,marginTop:10}},
           e("div", {style:{flex:1}},
