@@ -147,7 +147,11 @@ function uint8ToBase64(bytes) {
 async function getFFmpeg(onLog) {
   if (_cachedFFmpeg) return _cachedFFmpeg;
   const { createFFmpeg } = FFmpeg;
-  const ffmpeg = createFFmpeg({ log: false, progress: onLog });
+  const ffmpeg = createFFmpeg({
+    log: false,
+    progress: onLog,
+    corePath: "https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js"
+  });
   await ffmpeg.load();
   _cachedFFmpeg = ffmpeg;
   return ffmpeg;
