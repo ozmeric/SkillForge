@@ -587,6 +587,11 @@ const emptyTraining = () => ({phase:0, type:"S", name:"", format:CONFIG.document
 const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
   const [form, setForm] = useState(null);
   const [seeding, setSeeding] = useState(false);
+  const [synthUploading, setSynthUploading] = useState(false);
+  const [synthMsg, setSynthMsg] = useState("");
+  const [videoJobs, setVideoJobs] = useState([]);
+  const loadVideoJobs = () => api("getVideoJobs", {pin}).then(d=>setVideoJobs(d.jobs||[]));
+  useEffect(()=>{ loadVideoJobs(); }, []);
   const byPhase = {};
   trainings.forEach(t=>{ (byPhase[t.phase]=byPhase[t.phase]||[]).push(t); });
   const phases = Object.keys(byPhase).map(Number).sort((a,b)=>a-b);
@@ -613,8 +618,18 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
         trainings.length===0 && e("button", {style:S.btn("ghost"), disabled:seeding, onClick: async ()=>{
           setSeeding(true); await api("seedGT94",{pin}); setSeeding(false); reload();
         }}, seeding?"Seeding...":"Seed GT R94 Example Plan"),
-        e("button", {style:S.btn(), onClick:()=>setForm(emptyTraining())}, "+ Add Training")
+        e("button", {style:S.btn(), onClick:()=>{setForm(emptyTraining()); setSynthMsg("");}}, "+ Add Training")
       )
+    ),
+    videoJobs.length > 0 && e("div", {style:{marginBottom:20}},
+      e("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+        e("div", {style:{fontSize:12,fontWeight:800,color:"#4a6fa5",textTransform:"uppercase",letterSpacing:"0.08em"}}, "Video Jobs (Synthesia)"),
+        e("button", {style:{...S.btn("ghost"),padding:"4px 8px",fontSize:11}, onClick:()=>{loadVideoJobs(); reload();}}, "Refresh")
+      ),
+      videoJobs.map(j => e("div", {key:j.id, style:{...S.card, display:"flex",justifyContent:"space-between",alignItems:"center",padding:10}},
+        e("div", {style:{fontSize:13,color:"#e2e8f0"}}, j.trainingName),
+        e("span", {style:S.badge(j.status==="done"?"#10b981":j.status==="failed"?"#ef4444":"#f59e0b", "#fff")}, j.status)
+      ))
     ),
     phases.length===0 && e("div", {style:{color:"#7a9cc5",fontSize:13}}, "No trainings yet."),
     phases.map(phase => e("div", {key:phase, style:{marginBottom:20}},
@@ -631,7 +646,7 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
             (t.jobDescriptionIds.length ? t.jobDescriptionIds.length+" job(s)" : "All jobs"))
         ),
         e("div", {style:{display:"flex",gap:8,flexShrink:0}},
-          e("button", {style:S.btn("ghost"), onClick:()=>setForm({...t})}, "Edit"),
+          e("button", {style:S.btn("ghost"), onClick:()=>{setForm({...t}); setSynthMsg("");}}, "Edit"),
           e("button", {style:S.btn("danger"), onClick: async ()=>{ if(confirm("Delete this training?")){ await api("deleteTraining",{pin,trainingId:t.id}); reload(); } }}, "Delete")
         )
       ))
@@ -655,6 +670,35 @@ const PlanView = ({ trainings, jobDescriptions, reload, pin }) => {
           CONFIG.documentFormats.map(f=>e("option",{key:f,value:f},f))),
         e("label", {style:{...S.label,marginTop:10}}, "Content URL (video / presentation link)"),
         e("input", {style:S.input, value:form.contentUrl, placeholder:"https://...", onChange:ev=>setForm({...form,contentUrl:ev.target.value})}),
+        form.id && e("div", {style:{marginTop:10, padding:10, border:"1px dashed #1e3a5f", borderRadius:8}},
+          e("label", {style:{...S.label, marginTop:0}}, "Or generate a video with Synthesia"),
+          e("div", {style:{fontSize:11, color:"#7a9cc5", marginBottom:8}},
+            "Upload a .pptx (with speaker notes) or .docx and Synthesia will generate a narrated avatar video. Takes a few minutes — the Content URL above fills in automatically once it's ready."),
+          e("input", {type:"file", accept:".pptx,.docx", disabled:synthUploading,
+            onChange: async (ev) => {
+              const file = ev.target.files[0];
+              if (!file) return;
+              setSynthUploading(true); setSynthMsg("");
+              try {
+                const base64 = await new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result.split(",")[1]);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                });
+                const res = await api("generateSynthesiaVideo", {pin, trainingId:form.id, fileBase64:base64, fileName:file.name});
+                setSynthMsg(res.error ? ("Error: "+res.error) : ("Started! "+res.scenesCount+" scene(s) sent to Synthesia — check Video Jobs below in a few minutes."));
+                if (!res.error) loadVideoJobs();
+              } catch(ex) {
+                setSynthMsg("Upload failed: " + ex.message);
+              }
+              setSynthUploading(false);
+              ev.target.value = "";
+            }
+          }),
+          synthUploading && e("div", {style:{fontSize:12, color:CONFIG.accentColor, marginTop:6}}, "Uploading and starting generation…"),
+          synthMsg && e("div", {style:{fontSize:12, color: synthMsg.indexOf("Error")===0||synthMsg.indexOf("failed")>=0 ? "#ef4444" : "#10b981", marginTop:6}}, synthMsg)
+        ),
         e("div", {style:{display:"flex",gap:10,marginTop:10}},
           e("div", {style:{flex:1}},
             e("label", {style:S.label}, "Points"),
